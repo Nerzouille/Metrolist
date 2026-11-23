@@ -76,6 +76,7 @@ import com.metrolist.shared.ui.navigation.NavigationBackHandler
 import com.metrolist.shared.ui.player.LocalPlayerArtworkHandoff
 import com.metrolist.shared.ui.player.PlayerArtworkHandoff
 import com.metrolist.shared.ui.theme.uiEnhanced
+import com.metrolist.shared.utils.Logger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -211,6 +212,12 @@ fun BottomSheet(
     val mandatoryGestureBottom by rememberUpdatedState(WindowInsets.mandatorySystemGestures.getBottom(density))
     val currentHeaderHeight by rememberUpdatedState(collapsedHeaderHeight)
     val currentPrepareDismissal by rememberUpdatedState(prepareDismissal)
+    LaunchedEffect(state, mandatoryGestureBottom) {
+        Logger.d(
+            Q5170,
+            "sheet@${state.hashCode()} mandatoryGestureBottom=${mandatoryGestureBottom}px collapsedHeader=$collapsedHeaderHeight",
+        )
+    }
 
     val isOpening by remember(state) { derivedStateOf { state.progress > 0f } }
     val handlesBack by remember(state) { derivedStateOf { state.progress > 0.2f && !state.isDismissed } }
@@ -236,9 +243,15 @@ fun BottomSheet(
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     val headerHeightPx = with(density) { currentHeaderHeight.toPx() }
-                    if (state.isCollapsed && down.position.y > headerHeightPx) return@awaitEachGesture
                     val translationY = with(density) { (state.expandedBound - state.value).toPx().coerceAtLeast(0f) }
                     val dragAccepted = down.position.y + translationY < size.height - mandatoryGestureBottom
+                    Logger.d(
+                        Q5170,
+                        "sheet@${state.hashCode()} down y=${down.position.y} header=$headerHeightPx collapsed=${state.isCollapsed} " +
+                            "translationY=$translationY height=${size.height} gestureBottom=$mandatoryGestureBottom " +
+                            "accepted=$dragAccepted consumed=${down.isConsumed} value=${state.value}",
+                    )
+                    if (state.isCollapsed && down.position.y > headerHeightPx) return@awaitEachGesture
                     if (!dragAccepted) return@awaitEachGesture
 
                     val onDismiss = currentPrepareDismissal?.invoke()
@@ -250,14 +263,19 @@ fun BottomSheet(
                                 val direction = if (overSlop == Offset.Zero) change.position - down.position else overSlop
                                 verticalGesture = abs(direction.y) > abs(direction.x)
                             }
+                            Logger.d(Q5170, "sheet@${state.hashCode()} slop passed overSlop=$overSlop vertical=$verticalGesture")
                             if (verticalGesture == true) {
+                                Logger.d(Q5170, "sheet@${state.hashCode()} CLAIMS touch, consuming")
                                 focusManager.clearFocus(force = true)
                                 keyboardController?.hide()
                                 velocityTracker.addPointerInputChange(change)
                                 change.consume()
                                 state.dispatchRawDelta(overSlop.y)
                             }
-                        } ?: return@awaitEachGesture
+                        } ?: run {
+                            Logger.d(Q5170, "sheet@${state.hashCode()} no drag (tap or cancelled)")
+                            return@awaitEachGesture
+                        }
                     state.isDragging = true
                     var completed = false
                     try {
@@ -268,6 +286,7 @@ fun BottomSheet(
                                 change.consume()
                             }
                     } finally {
+                        Logger.d(Q5170, "sheet@${state.hashCode()} drag end completed=$completed value=${state.value}")
                         state.isDragging = false
                         if (!completed) state.resumeAnimation()
                     }
@@ -483,6 +502,12 @@ class BottomSheetState(
         targetAnchor: Int,
     ) {
         val lowerBound = if (isDismissible) dismissed else collapsed
+        Logger.d(
+            Q5170,
+            "sheet@${hashCode()} updateBounds old=($dismissedBound,$collapsedBound,$expandedBound) " +
+                "new=($lowerBound,$collapsed,$expanded) anchor ${this.targetAnchor}->$targetAnchor value=$value " +
+                "animating=${animatable.isRunning} dragging=$isDragging",
+        )
         this.targetAnchor = targetAnchor
         val target =
             when (targetAnchor) {
@@ -528,6 +553,7 @@ class BottomSheetState(
         dismissedBound = lowerBound.coerceAtMost(expanded)
         expandedBound = expanded
         animatable.updateBounds(dismissedBound, expanded)
+        Logger.d(Q5170, "sheet@${hashCode()} updateBounds snapTo $resizedValue reanimate=$wasAnimating target=$target")
         animatable.snapTo(resizedValue)
         if (wasAnimating) {
             coroutineScope.launch {
@@ -564,17 +590,29 @@ class BottomSheetState(
 
     fun collapse(animationSpec: AnimationSpec<Dp>): Job {
         onDismissComplete = null
+        Logger.d(Q5170, "sheet@${hashCode()} collapse from value=$value to $collapsedBound\n${Throwable().stackTraceToString().take(1500)}")
         changeAnchor(COLLAPSED_ANCHOR)
         return coroutineScope.launch {
-            animatable.animateTo(collapsedBound, animationSpec)
+            val result = runCatching { animatable.animateTo(collapsedBound, animationSpec) }
+            Logger.d(
+                Q5170,
+                "sheet@${hashCode()} collapse done value=$value result=${result.exceptionOrNull() ?: result.getOrNull()?.endReason}",
+            )
+            result.getOrThrow()
         }
     }
 
     fun expand(animationSpec: AnimationSpec<Dp>) {
         onDismissComplete = null
+        Logger.d(Q5170, "sheet@${hashCode()} expand from value=$value to upper=${animatable.upperBound} lower=${animatable.lowerBound}")
         changeAnchor(EXPANDED_ANCHOR)
         coroutineScope.launch {
-            animatable.upperBound?.let { animatable.animateTo(it, animationSpec) }
+            val result = runCatching { animatable.upperBound?.let { animatable.animateTo(it, animationSpec) } }
+            Logger.d(
+                Q5170,
+                "sheet@${hashCode()} expand done value=$value result=${result.exceptionOrNull() ?: result.getOrNull()?.endReason}",
+            )
+            result.getOrThrow()
         }
     }
 
@@ -587,10 +625,12 @@ class BottomSheetState(
     }
 
     fun collapseSoft() {
+        Logger.d(Q5170, "sheet@${hashCode()} collapseSoft")
         collapse(spatialSpec)
     }
 
     fun expandSoft() {
+        Logger.d(Q5170, "sheet@${hashCode()} expandSoft")
         expand(spatialSpec)
     }
 
@@ -624,6 +664,7 @@ class BottomSheetState(
     }
 
     fun snapTo(value: Dp) {
+        Logger.d(Q5170, "sheet@${hashCode()} snapTo $value from ${this.value}")
         coroutineScope.launch {
             animatable.snapTo(value)
         }
@@ -773,6 +814,10 @@ fun rememberBottomSheetState(
     val spatialSpec = MaterialTheme.motionScheme.defaultSpatialSpec<Dp>()
     val state =
         remember(coroutineScope, spatialSpec, isDismissible) {
+            Logger.d(
+                Q5170,
+                "rememberBottomSheetState NEW state bounds=($dismissedBound,$collapsedBound,$expandedBound) anchor=$previousAnchor",
+            )
             BottomSheetState(
                 draggableState =
                     DraggableState { delta ->
@@ -794,3 +839,6 @@ fun rememberBottomSheetState(
     }
     return state
 }
+
+// TEMP diagnostics for #5170, remove before merge.
+internal const val Q5170 = "Q5170"

@@ -204,6 +204,7 @@ import com.metrolist.shared.ui.components.LocalPlayerArtworkPrefetchUrls
 import com.metrolist.shared.ui.components.PlayerMenuAction
 import com.metrolist.shared.ui.components.PlayerPrimaryControls
 import com.metrolist.shared.ui.components.PopupVisibility
+import com.metrolist.shared.ui.components.Q5170
 import com.metrolist.shared.ui.components.SleepTimerDialog
 import com.metrolist.shared.ui.components.VintageAudioVideoModeSwitcher
 import com.metrolist.shared.ui.components.VintageClassicActionButtons
@@ -909,7 +910,19 @@ fun PlayerScreen(
                     isDismissible = false,
                 )
 
+            LaunchedEffect(navigationBarBottomPadding, queuePeekHeight, maxHeight, useLandscapeLayout) {
+                Logger.d(
+                    Q5170,
+                    "queue insets navBarBottom=$navigationBarBottomPadding peek=$queuePeekHeight maxHeight=$maxHeight " +
+                        "landscape=$useLandscapeLayout queueSheet@${queueSheetState.hashCode()}",
+                )
+            }
+
             fun openQueueSheet() {
+                Logger.d(
+                    Q5170,
+                    "openQueueSheet landscape=$useLandscapeLayout lyricsExpanded=${uiState.isLyricsExpanded} queueSheet@${queueSheetState.hashCode()}",
+                )
                 if (!useLandscapeLayout && uiState.isLyricsExpanded) {
                     viewModel.setLyricsVisible(false)
                 }

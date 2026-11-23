@@ -2,6 +2,7 @@
 
 package com.metrolist.shared.ui.components
 
+import android.util.Log
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
@@ -89,7 +90,10 @@ actual fun PlayerConnectedButtonGroup(
             PlayerControlAction(
                 icon = MetrolistIcons.AutoMirrored.Rounded.QueueMusic,
                 contentDescription = stringResource(Res.string.queue),
-                onClick = onQueueClick,
+                onClick = {
+                    Log.d("Q5170", "queue button onClick")
+                    onQueueClick()
+                },
                 checked = isQueueActive,
             ),
             onSleepTimerClick?.let {
